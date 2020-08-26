@@ -67,7 +67,7 @@ def daemonize(main=None, args=None, stdout=None, stderr=None, stdin=None,
 
 
     # decouple from parent process group
-    os.setsid()
+  # os.setsid()
 
     # second fork
     try:
