@@ -63,8 +63,8 @@ def monkeypatch_os_fork_functions():
     all locks before forking and release them afterwards.
     '''
 
-    # monkeypatching can be enabled by setting RADICAL_UTILS_PATCHATFORK
-    if 'RADICAL_UTILS_PATCHATFORK' not in os.environ:
+    # monkeypatching can be enabled by setting RADICAL_UTILS_NO_ATFORK
+    if 'RADICAL_UTILS_NO_ATFORK' in os.environ:
         return
 
     builtin_function = type(''.join)
@@ -75,7 +75,7 @@ def monkeypatch_os_fork_functions():
 
 
 # This lock protects all of the lists below.
-_fork_lock               = threading.Lock()
+_fork_lock               = threading.RLock()
 _prepare_call_list       = list()
 _prepare_call_exceptions = list()
 _parent_call_list        = list()
@@ -100,8 +100,8 @@ def atfork(prepare=None, parent=None, child=None):
     to do so.
     '''
 
-    # monkeypatching can be disabled by setting RADICAL_UTILS_PATCHATFORK
-    if 'RADICAL_UTILS_PATCHATFORK' not in os.environ:
+    # monkeypatching can be disabled by setting RADICAL_UTILS_NO_ATFORK
+    if 'RADICAL_UTILS_NO_ATFORK' in os.environ:
         return
 
     assert not prepare or callable(prepare)
@@ -118,7 +118,10 @@ def atfork(prepare=None, parent=None, child=None):
         if child:
             _child_call_list.append(child)
     finally:
-        _fork_lock.release()
+        try:
+            _fork_lock.release()
+        except:
+            pass
 
 
 # ------------------------------------------------------------------------------
@@ -131,7 +134,10 @@ def _call_atfork_list(call_list):
     exception_list = []
     for func in call_list:
         try:
-            func()
+            try:
+                func()
+            except:
+                pass
         except:
             exception_list.append(sys.exc_info())
     return exception_list
@@ -156,7 +162,10 @@ def parent_after_fork_release():
     prepare_exceptions = list(_prepare_call_exceptions)
     del _prepare_call_exceptions[:]
     exceptions = _call_atfork_list(_parent_call_list)
-    _fork_lock.release()
+    try:
+        _fork_lock.release()
+    except:
+        pass
 
     _print_exception_list(prepare_exceptions, 'before fork')
     _print_exception_list(exceptions, 'after fork from parent')
@@ -172,7 +181,10 @@ def child_after_fork_release():
 
     del _prepare_call_exceptions[:]
     exceptions = _call_atfork_list(_child_call_list)
-    _fork_lock.release()
+    try:
+        _fork_lock.release()
+    except:
+        pass
 
     _print_exception_list(exceptions, 'after fork from child')
 

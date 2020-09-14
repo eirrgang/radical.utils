@@ -15,7 +15,7 @@ OVERWRITE = 'overwrite'
 
 # ------------------------------------------------------------------------------
 #
-class DictMixin:
+class DictMixin(dict):
     '''
     Mixin defining all dictionary methods for classes that already have
     a minimum dictionary interface including getitem, setitem, delitem,
@@ -23,6 +23,15 @@ class DictMixin:
     interface functionality to make the class look like a fully compliant
     dictionary.
     '''
+
+  # # --------------------------------------------------------------------------
+  # #
+  # # mascerade as dict for `isinstance` calls
+  # #
+  # @property
+  # def __class__(self):
+  #     return dict
+
 
     # --------------------------------------------------------------------------
     #
@@ -106,6 +115,9 @@ class DictMixin:
 
     def __repr__(self):
         return repr(dict(list(self.items())))
+
+    def __len__(self):
+        return len(self.keys())
 
 
 # ------------------------------------------------------------------------------

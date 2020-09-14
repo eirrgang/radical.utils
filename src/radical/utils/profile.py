@@ -52,6 +52,11 @@ NTP_DIFF_WARN_LIMIT = 1.0
 # cache the result.  We use a disk cache which is valid for 1 minute
 NTP_CACHE_TIMEOUT = 60  # disk cache is valid for 60 seconds
 
+# maximum field size allowed by the csv parser.  The larger the number of
+# entities in the profile, the larger the size of the filed required by the
+# csv parser. We assume a 64bit C long.
+CSV_FIELD_SIZE_LIMIT = 9223372036854775807
+
 
 def _sync_ntp():
 
@@ -175,7 +180,7 @@ class Profiler(object):
         # level buffering should still apply.  This is supposed to shield
         # against incomplete profiles.
         self._handle = open("%s/%s.prof" % (self._path, self._name), 'a',
-                            buffering=1)
+                            buffering=1024)
 
         # write header and time normalization info
         if self._handle:
@@ -214,6 +219,12 @@ class Profiler(object):
 
     # --------------------------------------------------------------------------
     #
+    def enable(self):  self._enabled = True
+    def disable(self): self._enabled = False
+
+
+    # --------------------------------------------------------------------------
+    #
     def close(self):
 
         try:
@@ -237,14 +248,12 @@ class Profiler(object):
         if not self._enabled: return
         if not self._handle : return
 
-        if self._enabled:
+        if verbose:
+            self.prof("flush")
 
-            if verbose:
-                self.prof("flush")
-
-            # see https://docs.python.org/2/library/stdtypes.html#file.flush
-            self._handle.flush()
-            os.fsync(self._handle.fileno())
+        # see https://docs.python.org/2/library/stdtypes.html#file.flush
+        self._handle.flush()
+        os.fsync(self._handle.fileno())
 
 
     # --------------------------------------------------------------------------
@@ -337,6 +346,8 @@ def read_profiles(profiles, sid=None, efilter=None):
     else:
         legacy = False
 
+    # set the maximum field size allowed by the csv parser
+    csv.field_size_limit(CSV_FIELD_SIZE_LIMIT)
 
   # import resource
   # print('max RSS       : %20d MB' % (resource.getrusage(1)[2]/(1024)))

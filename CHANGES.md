@@ -2,6 +2,93 @@
 For a list of open issues and known problems, see
 https://github.com/radical-cybertools/radical.utils/issues/
 
+
+1.5.4 Release                                                         2020-09-14
+--------------------------------------------------------------------------------
+
+  - fixed `ru.munch.update`  and `ru.munch.deepcopy`
+  - uniform handling of munch schema and defaults
+ 
+
+1.5.3 Hotfix Release                                                  2020-08-14
+--------------------------------------------------------------------------------
+
+  - fix recursive munch initialization
+
+
+1.5.2 Hotfix Release                                                  2020-08-05
+--------------------------------------------------------------------------------
+
+  - fix dict inheritance
+  
+
+1.5.1 Release                                                         2020-08-05
+--------------------------------------------------------------------------------
+
+  - add default config
+  - config inheritance
+  - munch implementation / improvements / type checking
+  - add several tests
+  - depend on radical.gtod
+  - documentation
+  - implement metric_expand
+  - line buffering is now multiprocess-safe for high-frequency writes
+  - revert to exec, capture stdio, exceptions
+  - travis- and pylint-related updates
+  - apply exception chaining
+  - sets min python version to 3.6
+
+
+1.4.0 Release                                                         2020-05-12
+--------------------------------------------------------------------------------
+
+  - merge #230: test update
+  - merge #232: documentation fix
+  - merge #233: pep8
+  - merge #234: improve test coverage
+  - merge #235: configurable csv field size limit
+  - add lock unregister
+  - clarify cb semantics
+  - force flush on json write
+  - make bulk logger usable for tests
+  - profiling fix
+  - fix queue debug verbosity
+  - terminate listerer on unsubscribe
+  - travis timeout fix
+
+
+1.3.1 Release                                                         2020-04-14
+--------------------------------------------------------------------------------
+
+  - fix listener termination for Queue getter
+
+  
+1.3.0 Release                                                         2020-04-10
+--------------------------------------------------------------------------------
+
+  - improve unit testing
+
+  
+1.2.2 Hotfix Release                                                  2020-03-22
+--------------------------------------------------------------------------------
+
+  - fix atfork default setting
+
+  
+1.2.1 Hotfix Release                                                  2020-03-22
+--------------------------------------------------------------------------------
+  
+  - fix: clean ZMQ subscriber and listener threads after fork
+  - fix: re-enable atfork handlers for os.fork, logging, singleton by default
+  - PR #216 fix to_tuple
+  - PR #217 add time simulation class
+  - PR #218 change ZMQ bulking defaults
+  - PR #225 add noop() as cb default value
+  - remove deprecated signals
+  - reduce log chattiness
+  - simplify bridge construction
+
+      
 1.2.0 Release                                                         2020-03-07
 --------------------------------------------------------------------------------
   

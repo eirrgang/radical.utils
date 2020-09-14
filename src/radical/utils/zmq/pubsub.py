@@ -4,12 +4,16 @@ import msgpack
 
 import threading as mt
 
-from .bridge  import Bridge, no_intr, log_bulk
+from ..atfork  import atfork
+from ..config  import Config
+from ..ids     import generate_id, ID_CUSTOM
+from ..url     import Url
+from ..misc    import get_hostip, is_string, as_string, as_bytes, as_list, noop
+from ..logger  import Logger
+from ..profile import Profiler
 
-from ..ids    import generate_id, ID_CUSTOM
-from ..url    import Url
-from ..misc   import get_hostip, as_string, as_bytes, as_list
-from ..logger import Logger
+from .bridge   import Bridge
+from .utils    import no_intr, log_bulk
 
 
 # ------------------------------------------------------------------------------
@@ -17,6 +21,15 @@ from ..logger import Logger
 _LINGER_TIMEOUT  =   250  # ms to linger after close
 _HIGH_WATER_MARK =     0  # number of messages to buffer before dropping
                           # 0:  infinite
+
+
+# ------------------------------------------------------------------------------
+#
+def _atfork_child():
+    Subscriber._callbacks = dict()                                        # noqa
+
+
+atfork(noop, noop, _atfork_child)
 
 
 # ------------------------------------------------------------------------------
@@ -29,7 +42,23 @@ class PubSub(Bridge):
 
     # --------------------------------------------------------------------------
     #
-    def __init__(self, cfg):
+    def __init__(self, cfg=None, channel=None):
+
+        if cfg and not channel and is_string(cfg):
+            # allow construction with only channel name
+            channel = cfg
+            cfg     = None
+
+        if   cfg    : cfg = Config(cfg=cfg)
+        elif channel: cfg = Config(cfg={'channel': channel})
+        else: raise RuntimeError('PubSub needs cfg or channel parameter')
+
+        if not cfg.channel:
+            raise ValueError('no channel name provided for pubsub')
+
+        if not cfg.uid:
+            cfg.uid = generate_id('%s.bridge.%%(counter)04d' % cfg.channel,
+                                  ID_CUSTOM)
 
         super(PubSub, self).__init__(cfg)
 
@@ -115,8 +144,6 @@ class PubSub(Bridge):
         self._poll.register(self._pub, zmq.POLLIN)
         self._poll.register(self._sub, zmq.POLLIN)
 
-        self._log.info('initialized bridge %s', self._uid)
-
 
     # --------------------------------------------------------------------------
     #
@@ -143,7 +170,7 @@ class PubSub(Bridge):
                 msg = self._sub.recv()
                 self._pub.send(msg)
 
-                self._log.debug('~~ %s: %s', self.channel, msg)
+                self._prof.prof('subscribe', uid=self._uid, msg=msg)
               # log_bulk(self._log, msg, '~~ %s' % self.channel)
 
 
@@ -154,7 +181,7 @@ class PubSub(Bridge):
                 msg = self._pub.recv()
                 self._sub.send(msg)
 
-                self._log.debug('<> %s: %s', self.channel, msg)
+              # self._prof.prof('msg_fwd', uid=self._uid, msg=msg)
               # log_bulk(self._log, msg, '<> %s' % self.channel)
 
 
@@ -164,18 +191,26 @@ class Publisher(object):
 
     # --------------------------------------------------------------------------
     #
-    def __init__(self, channel, url, log=None):
+    def __init__(self, channel, url, log=None, prof=None):
 
         self._channel  = channel
-        self._url      = url
+        self._url      = as_string(url)
         self._log      = log
+        self._prof     = prof
         self._lock     = mt.Lock()
 
         # FIXME: no uid ns
         self._uid      = generate_id('%s.pub.%s' % (self._channel,
                                                    '%(counter)04d'), ID_CUSTOM)
         if not log:
-            self._log  = Logger(name=self._uid, ns='radical.utils')
+            self._log  = Logger(name=self._uid, ns='radical.utils.zmq')
+
+        if not prof:
+            self._prof = Profiler(name=self._uid, ns='radical.utils.zmq')
+            self._prof.disable()
+
+        if 'hb' in self._uid or 'heartbeat' in self._uid:
+            self._prof.disable()
 
         self._log.info('connect pub to %s: %s'  % (self._channel, self._url))
 
@@ -208,7 +243,8 @@ class Publisher(object):
         assert(isinstance(topic, str )), 'invalid topic type'
         assert(isinstance(msg,   dict)), 'invalid message type'
 
-      # self._log.debug('-> %s: %s', self.channel, msg)
+      # self._log.debug('=== put %s : %s: %s', topic, self.channel, msg)
+      # self._prof.prof('put', uid=self._uid, msg=msg)
       # log_bulk(self._log, msg, '-> %s' % self.channel)
 
         btopic = as_bytes(topic.replace(' ', '_'))
@@ -229,10 +265,11 @@ class Subscriber(object):
     # that all class instances share that information
     _callbacks = dict()
 
+
     # --------------------------------------------------------------------------
     #
     @staticmethod
-    def _get_nowait(socket, lock, timeout, channel=None):
+    def _get_nowait(socket, lock, timeout, log, prof):
 
         # FIXME: add logging
 
@@ -250,28 +287,28 @@ class Subscriber(object):
     # --------------------------------------------------------------------------
     #
     @staticmethod
-    def _listener(url, log):
+    def _listener(url, log, prof):
+
+      # assert(url in Subscriber._callbacks)
 
         try:
-            lock      = Subscriber._callbacks[url]['lock']
-            socket    = Subscriber._callbacks[url]['socket']
-            channel   = Subscriber._callbacks[url]['channel']
+            uid    = Subscriber._callbacks.get(url, {}).get('uid')
+            lock   = Subscriber._callbacks.get(url, {}).get('lock')
+            term   = Subscriber._callbacks.get(url, {}).get('term')
+            socket = Subscriber._callbacks.get(url, {}).get('socket')
 
-            while True:
+            while not term.is_set():
 
                 # this list is dynamic
-                callbacks = Subscriber._callbacks[url]['callbacks']
-
-                topic, msg = Subscriber._get_nowait(socket, lock, 500, channel)
-              # if topic and channel == 'state_pubsub':
-              #     log.debug('get %s [%s]', topic, len(msg))
+                callbacks  = Subscriber._callbacks[url]['callbacks']
+                topic, msg = Subscriber._get_nowait(socket, lock, 500, log, prof)
 
                 if topic:
                     t = as_string(topic)
                     for m in as_list(msg):
                         m = as_string(m)
                         for cb, _lock in callbacks:
-                          # log.debug('cb  %s [%s] [%s]', cb, len(msg), l)
+                          # prof.prof('call_cb', uid=uid, msg=cb.__name__)
                             if _lock:
                                 with _lock:
                                     cb(t, m)
@@ -283,7 +320,7 @@ class Subscriber(object):
 
     # --------------------------------------------------------------------------
     #
-    def __init__(self, channel, url, topic=None, cb=None, log=None):
+    def __init__(self, channel, url, topic=None, cb=None, log=None, prof=None):
         '''
         If a `topic` is given, the channel will subscribe to that topic
         immediately.
@@ -295,14 +332,22 @@ class Subscriber(object):
         '''
 
         self._channel  = channel
-        self._url      = url
+        self._url      = as_string(url)
         self._topic    = as_list(topic)
         self._cb       = cb
         self._log      = log
+        self._prof     = prof
         self._uid      = generate_id('%s.sub.%s' % (self._channel,
                                                    '%(counter)04d'), ID_CUSTOM)
         if not self._log:
             self._log = Logger(name=self._uid, ns='radical.utils.zmq')
+
+        if not self._prof:
+            self._prof = Profiler(name=self._uid, ns='radical.utils.zmq')
+            self._prof.disable()
+
+        if 'hb' in self._uid or 'heartbeat' in self._uid:
+            self._prof.disable()
 
         self._log.info('connect sub to %s: %s'  % (self._channel, self._url))
 
@@ -316,9 +361,11 @@ class Subscriber(object):
             s.hwm    = _HIGH_WATER_MARK
             s.connect(self._url)
 
-            Subscriber._callbacks[url] = {'socket'   : s,
+            Subscriber._callbacks[url] = {'uid'      : self._uid,
+                                          'socket'   : s,
                                           'channel'  : channel,
                                           'lock'     : mt.Lock(),
+                                          'term'     : mt.Event(),
                                           'thread'   : None,
                                           'callbacks': list()}
 
@@ -352,11 +399,25 @@ class Subscriber(object):
         if Subscriber._callbacks[self._url]['thread']:
             return
 
-        t = mt.Thread(target=Subscriber._listener, args=[self._url, self._log])
+        t = mt.Thread(target=Subscriber._listener,
+                      args=[self._url, self._log, self._prof])
         t.daemon = True
         t.start()
 
         Subscriber._callbacks[self._url]['thread'] = t
+
+
+    # --------------------------------------------------------------------------
+    #
+    def _stop_listener(self, force=False):
+
+        # only stop listener if no callbacks remain registered (unless forced)
+        if force or not Subscriber._callbacks[self._url]['callbacks']:
+            if  Subscriber._callbacks[self._url]['thread']:
+                Subscriber._callbacks[self._url]['term'  ].set()
+                Subscriber._callbacks[self._url]['thread'].join()
+                Subscriber._callbacks[self._url]['term'  ].unset()
+                Subscriber._callbacks[self._url]['thread'] = None
 
 
     # --------------------------------------------------------------------------
@@ -371,8 +432,7 @@ class Subscriber(object):
         # `get()` and `get_nowait()` anymore, as those will interfere with the
         # thread consuming the messages,
         #
-        # The given callback (if any) is used to shield concurrent cb
-        # invokations.
+        # The given lock (if any) is used to shield concurrent cb invokations.
 
         if cb:
 
@@ -386,6 +446,26 @@ class Subscriber(object):
 
         with self._lock:
             no_intr(sock.setsockopt, zmq.SUBSCRIBE, as_bytes(topic))
+
+
+    # --------------------------------------------------------------------------
+    #
+    def unsubscribe(self, cb):
+
+        if self._url in Subscriber._callbacks:
+            for _cb, _lock in Subscriber._callbacks[self._url]['callbacks']:
+                if cb == _cb:
+                    Subscriber._callbacks[self._url]['callbacks'].remove([_cb, _lock])
+                    break
+
+        self._stop_listener()
+
+
+    # --------------------------------------------------------------------------
+    #
+    def stop(self):
+
+        self._stop_listener(force=True)
 
 
     # --------------------------------------------------------------------------
@@ -414,6 +494,8 @@ class Subscriber(object):
     # --------------------------------------------------------------------------
     #
     def get_nowait(self, timeout=None):
+
+        # FIXME:  does this duplicate _get_nowait? why / why not?
 
         if not self._interactive:
             raise RuntimeError('invalid get_nowait(): callbacks are registered')

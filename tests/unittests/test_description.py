@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 
+# pylint: disable=protected-access
+
 import pytest
 import radical.utils as ru
 
 
 # ------------------------------------------------------------------------------
 #
-class TestDescr(ru.Description):
+class _TestDescr(ru.Description):
 
     _schema = {'exe'  : str,
                'procs': int,
@@ -15,10 +17,10 @@ class TestDescr(ru.Description):
                'post' : (str, ),
                'meta' : None,
                'items': [int],
-               'pop'  : [int],
                '_foo' : str,
                '_data': str,
                'unset': int,
+               'i245' : [str],
     }
 
     def _verify(self):
@@ -37,13 +39,13 @@ def test_description():
                  'post' : False,
                  'meta' : 3.4,
                  'items': [3.4, '3'],
-                 'pop'  : [3.4, '3'],
                  '_foo' : ['bar'],
                  '_data': 4,
+                 'i245' : [],
     }
 
-    td = TestDescr()
-    td = TestDescr(from_dict=from_dict)
+    td = _TestDescr()
+    td = _TestDescr(from_dict=from_dict)
 
     with pytest.raises(ValueError):
         td.verify()
@@ -55,8 +57,8 @@ def test_description():
     assert(isinstance(td.procs, int))
     assert(isinstance(td.env,   dict))
     assert(isinstance(td.pre,   list))
-    assert(isinstance(td.pop,   list))
-    assert(isinstance(td._foo,  str))                                     # noqa
+    assert(isinstance(td.post,  tuple)), td.post
+  # assert(isinstance(td._foo,  str)), td._foo                            # noqa
 
     assert(isinstance(td['_data'], str))
     assert(isinstance(td['items'], list))
@@ -68,8 +70,7 @@ def test_description():
     assert(td.env      == {'3': 4})
     assert(td.pre      == ['True'])
     assert(td.post     == ('False',))
-    assert(td.pop      == [3, 3])
-    assert(td._foo     == "['bar']")                                      # noqa
+  # assert(td._foo     == "['bar']")                                      # noqa
 
     assert(td['_data'] == '4')
     assert(td['items'] == [3, 3])
@@ -80,12 +81,40 @@ def test_description():
     c = copy.deepcopy(td)
     assert(c.as_dict() == td.as_dict())
 
+    td.i245.append('foo')
+    td = _TestDescr()
+    assert(not td.i245), td.i245
+
+
+# ------------------------------------------------------------------------------
+#
+def test_inheritance():
+
+    class _Test(ru.Description):
+
+        _schema   = {'i245': [str]}
+        _defaults = {'i245': [   ]}
+
+        def __init__(self, from_dict=None):
+            ru.Description.__init__(self, from_dict=from_dict)
+
+    # --------------------------------------------------------------------------
+    td = _Test()
+    assert(not td.i245)
+
+    td.i245.append('foo')
+    assert(td.i245 == ['foo'])
+
+    td = _Test()
+    assert (not td.i245), td.i245
+
 
 # ------------------------------------------------------------------------------
 #
 if __name__ == '__main__':
 
     test_description()
+    test_inheritance()
 
 
 # ------------------------------------------------------------------------------

@@ -103,7 +103,7 @@ class Heartbeat(object):
     #
     def _watch(self):
 
-        # initial heartbeat w ithout delay
+        # initial heartbeat without delay
         if  self._beat_cb:
             self._beat_cb()
 
@@ -176,7 +176,7 @@ class Heartbeat(object):
         if not uid:
             uid = 'default'
 
-      # self._log.debug('hb %s beat [%s]', self._uid, uid)
+        self._log.debug('hb %s beat [%s]', self._uid, uid)
         with self._lock:
             self._tstamps[uid] = timestamp
 

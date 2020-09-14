@@ -30,7 +30,7 @@ def read_json(fname):
             return parse_json(f.read())
 
         except ValueError as e:
-            raise ValueError('error parsing %s: %s' % (fname, e))
+            raise ValueError('error parsing %s: %s' % (fname, e)) from e
 
 
 # ------------------------------------------------------------------------------
@@ -61,6 +61,7 @@ def write_json(data, fname):
     with open(fname, 'w') as f:
         json.dump(data, f, sort_keys=True, indent=4, ensure_ascii=False)
         f.write('\n')
+        f.flush()
 
 
 # ------------------------------------------------------------------------------
@@ -94,6 +95,59 @@ def parse_json_str(json_str):
     '''
 
     return as_string(parse_json(json_str))
+
+
+# ------------------------------------------------------------------------------
+#
+def metric_expand(data):
+    '''
+    iterate through the given dictionary, and when encountering a key string of
+    the form `ru.XYZ` or `rp.ABC`, expand them to their actually defined values.
+    This the following dict:
+
+        {
+            "ru.EVENT" : "foo"
+        }
+
+    becomes:
+
+
+        {
+            2 : "foo"
+        }
+
+    '''
+
+    try   : import radical.pilot as rp
+    except: pass
+    try   : import radical.saga  as rs
+    except: pass
+    try   : import radical.utils as ru
+    except: pass
+
+
+    if isinstance(data, str):
+
+        if data.count('.') == 1:
+            elems = data.split('.')
+            if len(elems[0]) == 2 and elems[0][0] == 'r':
+                try:
+                    data = eval(data)
+                finally:
+
+                    pass
+        return data
+
+
+    elif isinstance(data, list):
+        return [metric_expand(elem) for elem in data]
+
+
+    elif isinstance(data, dict):
+        return {metric_expand(k) : metric_expand(v) for k,v in data.items()}
+
+    else:
+        return data
 
 
 # ------------------------------------------------------------------------------
